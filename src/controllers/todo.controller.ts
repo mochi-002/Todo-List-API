@@ -8,24 +8,53 @@ import {
 import { AuthRequest } from "../middlewares/auth.middleware.js";
 import { sendError, sendSuccess } from "../utils/response.util.js";
 import { ToDo } from "../models/todo.model.js";
+import { SortOrder } from "mongoose";
+
+const allowedSortFields = ["createdAt", "title"];
+type queryParams = {
+  page?: string;
+  limit?: string;
+  search?: string;
+  sort?: string;
+  order?: string;
+};
 
 export const getAll = expressAsyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const page = Number(req.params.page) || 1;
-    const limit = Number(req.params.limit) || 10;
+    // req parametars for filtering and sorting
+    const {
+      page: pageQuery = "1",
+      limit: limitQuery = "10",
+      search,
+      sort: sortQuery = "createdAt",
+      order: orderQuery = "desc",
+    } = req.query as queryParams;
+
+    const page = Math.max(Number.parseInt(pageQuery, 10) || 1, 1);
+    const limit = Math.max(Number.parseInt(limitQuery, 10) || 10, 1);
+    const sort = allowedSortFields.includes(sortQuery)
+      ? sortQuery
+      : "createdAt";
+    const order: SortOrder = orderQuery.toLowerCase() === "asc" ? 1 : -1;
+    const filter = {
+      owner: req.user?._id,
+      ...(search
+        ? {
+            title: { $regex: search, $options: "i" },
+            description: { $regex: search, $options: "i" },
+          }
+        : {}),
+    };
 
     const skip = (page - 1) * limit;
 
     const [todos, total] = await Promise.all([
-      ToDo.find({
-        owner: req.user?._id,
-      })
+      ToDo.find(filter)
+        .sort({ [sort]: order })
         .skip(skip)
         .limit(limit),
 
-      ToDo.countDocuments({
-        owner: req.user?._id,
-      }),
+      ToDo.countDocuments(filter),
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -89,6 +118,7 @@ export const update = expressAsyncHandler(
         message: `Forbidden`,
         statusCode: 403,
       });
+      return;
     }
 
     const { error } = validateUpdateToDo(req.body);
@@ -130,6 +160,7 @@ export const remove = expressAsyncHandler(
         message: `Forbidden`,
         statusCode: 403,
       });
+      return;
     }
 
     await ToDo.findByIdAndDelete(req.params.id);

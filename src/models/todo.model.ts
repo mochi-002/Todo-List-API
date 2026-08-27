@@ -6,22 +6,25 @@ export interface ITodo {
   owner: mongoose.Types.ObjectId;
 }
 
-const TodoSchema = new mongoose.Schema<ITodo>({
-  title: {
-    type: String,
-    minLength: 3,
-    maxLength: 100,
-    require: true,
+const TodoSchema = new mongoose.Schema<ITodo>(
+  {
+    title: {
+      type: String,
+      minLength: 3,
+      maxLength: 100,
+      require: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
   },
-  description: {
-    type: String,
-    required: true,
-  },
-  owner: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-  },
-});
+  { timestamps: true },
+);
 
 export const ToDo = mongoose.model<ITodo>("ToDo", TodoSchema);
