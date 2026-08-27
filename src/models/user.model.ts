@@ -9,7 +9,8 @@ export interface IUser {
 }
 
 interface IUserMethods {
-  generateToken(): string;
+  generateAccessToken(): string;
+  generateRefreshToken(): string;
 }
 
 type UserDocument = mongoose.HydratedDocument<IUser, IUserMethods>;
@@ -38,15 +39,28 @@ const UserSchema = new mongoose.Schema<
   },
 });
 
-UserSchema.methods.generateToken = function (): string {
+UserSchema.methods.generateAccessToken = function (): string {
   const token = jwt.sign(
     {
-      _id: this.id,
+      _id: this._id,
       email: this.email,
       name: this.name,
     },
-    process.env.JWT_SECRET!,
-    { expiresIn: "12h" },
+    process.env.JWT_ACCESS_SECRET!,
+    { expiresIn: "15m" },
+  );
+  return `${token}`;
+};
+
+UserSchema.methods.generateRefreshToken = function (): string {
+  const token = jwt.sign(
+    {
+      _id: this._id,
+    },
+    process.env.JWT_REFRESH_SECRET!,
+    {
+      expiresIn: "7d",
+    },
   );
   return `${token}`;
 };

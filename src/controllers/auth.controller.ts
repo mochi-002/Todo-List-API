@@ -1,7 +1,8 @@
 import expressAsyncHandler from "express-async-handler";
 import bcrypt from "bcrypt";
-import type { Request, Response } from "express";
+import jwt from "jsonwebtoken";
 
+import type { Request, Response } from "express";
 import { IUser, User } from "../models/user.model.js";
 import { sendError, sendSuccess } from "../utils/response.util.js";
 import {
@@ -43,7 +44,15 @@ export const reqister = expressAsyncHandler(
     });
     await user.save();
 
-    const token = user.generateToken();
+    const token = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     const userObj = user.toObject();
     const { password: _password, ...other } = userObj;
@@ -93,13 +102,63 @@ export const login = expressAsyncHandler(
       return;
     }
 
-    const token = user.generateToken();
+    const token = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days, matches token expiry
+    });
+
     const userObj = user.toObject();
     const { password: _password, ...other } = userObj;
-
     sendSuccess(res, {
-      message: `User logged in successfully`,
+      message: `User ${userObj.name} logged in successfully`,
       data: { user: other, token },
+      statusCode: 201,
+    });
+  },
+);
+
+/**
+ * @description Refresh Access Token
+ * @route /auth/refresh
+ * @method POST
+ * @access public (relies on httpOnly cookie)
+ */
+export const refresh = expressAsyncHandler(
+  async (req: Request, res: Response) => {
+    const incomingToken = req.cookies?.refreshToken;
+    if (!incomingToken) {
+      sendError(res, { message: "No refresh token provided", statusCode: 401 });
+      return;
+    }
+
+    let payload: { _id: string };
+    try {
+      payload = jwt.verify(incomingToken, process.env.JWT_REFRESH_SECRET!) as {
+        _id: string;
+      };
+    } catch {
+      sendError(res, {
+        message: "Invalid or expired refresh token",
+        statusCode: 403,
+      });
+      return;
+    }
+
+    const user = await User.findById(payload._id);
+    if (!user) {
+      sendError(res, { message: "User no longer exists", statusCode: 404 });
+      return;
+    }
+
+    const newAccessToken = user.generateAccessToken();
+    sendSuccess(res, {
+      message: "Token refreshed",
+      data: { token: newAccessToken },
       statusCode: 200,
     });
   },
